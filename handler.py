@@ -3,12 +3,11 @@ Seed-VC Singing Voice Conversion Worker for RunPod Serverless.
 
 Accepts a song audio + user voice reference (30s),
 runs zero-shot singing voice conversion via Seed-VC,
-returns the converted audio.
+returns a URL to the converted audio.
 """
 
 import os
 import sys
-import base64
 import tempfile
 import time
 import subprocess
@@ -35,17 +34,28 @@ def download_file(url: str, dest_path: str):
     print(f"[Download] Done: {size_mb:.1f} MB")
 
 
+def upload_file(file_path: str, filename: str) -> str:
+    """Upload file to tmpfiles.org and return direct download URL."""
+    print(f"[Upload] Uploading {filename} ({os.path.getsize(file_path) / 1024 / 1024:.1f} MB)...")
+    with open(file_path, "rb") as f:
+        resp = requests.post(
+            "https://tmpfiles.org/api/v1/upload",
+            files={"file": (filename, f, "audio/wav")},
+            timeout=120,
+        )
+    resp.raise_for_status()
+    data = resp.json()
+    if data.get("status") != "success":
+        raise RuntimeError(f"Upload failed: {data}")
+    # Convert URL: tmpfiles.org/123/file.wav → tmpfiles.org/dl/123/file.wav
+    url = data["data"]["url"].replace("tmpfiles.org/", "tmpfiles.org/dl/")
+    print(f"[Upload] Done: {url}")
+    return url
+
+
 def run_seed_vc(source_path: str, target_path: str, output_dir: str,
                 pitch_shift: int = 0, diffusion_steps: int = 25):
-    """
-    Run Seed-VC inference via subprocess.
-
-    source_path: Song audio file (to be converted)
-    target_path: User's voice reference audio (~30s)
-    output_dir: Directory to save output
-    pitch_shift: Semitone shift (-12 to 12)
-    diffusion_steps: Quality/speed tradeoff (10=fast, 25=balanced, 50=best)
-    """
+    """Run Seed-VC inference via subprocess."""
     cmd = [
         "python", INFERENCE_SCRIPT,
         "--source", source_path,
@@ -133,35 +143,36 @@ def handler(job):
                 "task_id": task_id, "stage": "converting", "progress": 0.3
             })
 
+            start_time = time.time()
             output_path = run_seed_vc(
                 song_path, voice_path, output_dir,
                 pitch_shift=pitch_shift,
                 diffusion_steps=diffusion_steps
             )
+            inference_time = time.time() - start_time
 
-            # ── Stage 4: Prepare result ──────────────────────────
+            # ── Stage 4: Upload result ───────────────────────────
             runpod.serverless.progress_update(job, {
-                "task_id": task_id, "stage": "finishing", "progress": 0.9
+                "task_id": task_id, "stage": "uploading", "progress": 0.9
             })
 
             output_info = torchaudio.info(output_path)
             output_duration = output_info.num_frames / output_info.sample_rate
-
-            # Read output and encode as base64 for direct return
-            # (For production, upload to S3 instead)
-            with open(output_path, "rb") as f:
-                audio_base64 = base64.b64encode(f.read()).decode("utf-8")
-
             output_size_mb = os.path.getsize(output_path) / (1024 * 1024)
             print(f"[Job] Output: {output_duration:.1f}s, {output_size_mb:.1f} MB")
+
+            # Upload to temp file service (avoids RunPod 10MB return limit)
+            output_url = upload_file(output_path, f"cover_{task_id}.wav")
 
             return {
                 "task_id": task_id,
                 "status": "success",
+                "output_url": output_url,
                 "duration": round(output_duration, 2),
-                "output_audio_base64": audio_base64,
+                "inference_time": round(inference_time, 2),
                 "output_format": "wav",
                 "sample_rate": output_info.sample_rate,
+                "size_mb": round(output_size_mb, 2),
             }
 
         except Exception as e:
