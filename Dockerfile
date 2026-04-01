@@ -9,10 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Clone Seed-VC (pinned to main for reproducibility) ───────────
+# ── Clone Seed-VC ────────────────────────────────────────────────
 RUN git clone --depth 1 https://github.com/Plachtaa/seed-vc.git /app/seed-vc
 
-# ── Install Seed-VC dependencies (skip torch, already in base image) ──
+# ── Install Python dependencies (torch already in base image) ────
 RUN pip install --no-cache-dir \
     runpod \
     boto3 \
@@ -33,31 +33,11 @@ RUN pip install --no-cache-dir \
     pyyaml \
     accelerate
 
-# ── Pre-download all model weights into Docker image ─────────────
-# Seed-VC checkpoints
-RUN python -c "\
-from huggingface_hub import snapshot_download; \
-snapshot_download('Plachtaa/Seed-VC', local_dir='/app/seed-vc/checkpoints/Seed-VC'); \
-print('Seed-VC weights downloaded')"
-
-# Whisper-small (content encoder)
-RUN python -c "\
-from transformers import WhisperModel, WhisperFeatureExtractor; \
-WhisperModel.from_pretrained('openai/whisper-small'); \
-WhisperFeatureExtractor.from_pretrained('openai/whisper-small'); \
-print('Whisper cached')"
-
-# CAMPPlus (speaker encoder)
-RUN python -c "\
-from huggingface_hub import snapshot_download; \
-snapshot_download('funasr/campplus', local_dir='/app/campplus'); \
-print('CAMPPlus downloaded')" || echo "CAMPPlus download skipped, will download at runtime"
-
-# BigVGAN vocoder
-RUN python -c "\
-from huggingface_hub import snapshot_download; \
-snapshot_download('nvidia/bigvgan_v2_44khz_128band_512x', local_dir='/app/bigvgan'); \
-print('BigVGAN downloaded')" || echo "BigVGAN download skipped, will download at runtime"
+# ── NOTE: Model weights will auto-download on first run ──────────
+# Seed-VC inference.py handles downloading checkpoints from HuggingFace
+# automatically. This avoids build failures due to network issues.
+# First cold start will be slower (~2-3 min extra), subsequent runs
+# use RunPod's cached image.
 
 # ── Copy handler ─────────────────────────────────────────────────
 COPY handler.py /app/handler.py
