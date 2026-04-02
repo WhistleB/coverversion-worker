@@ -292,47 +292,117 @@ def mix_audio(vocals_path: str, instrumental_path: str, output_path: str,
               vocal_volume: float = 1.0, instrumental_volume: float = 1.0,
               reverb: float = 0.0):
     """
-    Mix converted vocals with original instrumental using ffmpeg.
-    vocal_volume: 人声音量 (1.0=原始, 1.3=突出人声)
-    instrumental_volume: 伴奏音量 (1.0=原始, 0.8=压低伴奏)
-    reverb: 混响强度 (0.0=无, 0.3=轻微KTV感, 0.6=强混响)
+    Mix converted vocals with original instrumental.
+    Uses pedalboard for professional reverb/EQ, ffmpeg for final mix.
+
+    vocal_volume: 人声音量 (1.0=原始, 3.0=最大)
+    instrumental_volume: 伴奏音量 (1.0=原始)
+    reverb: 混响强度 (0.0=干声, 0.3=KTV包厢, 0.6=大厅, 0.8=教堂)
     """
-    print(f"[Mix] Mixing: vocal_vol={vocal_volume}, inst_vol={instrumental_volume}, reverb={reverb}")
+    import numpy as np
+    from pedalboard import Pedalboard, Reverb, Compressor, HighpassFilter, LowpassFilter, Gain
+    from pedalboard.io import AudioFile
 
-    # 构建人声滤镜链
-    vocal_filters = [f"volume={vocal_volume}"]
+    print(f"[Mix] Processing: vocal_vol={vocal_volume}, inst_vol={instrumental_volume}, reverb={reverb}")
 
-    # 添加混响效果（KTV 感）
-    # 使用多层长延迟+低衰减模拟真实空间混响，而非短延迟颤音
+    # ── Step 1: 处理人声音效（pedalboard）──────────────────────
+    # 读取人声
+    with AudioFile(vocals_path) as f:
+        vocal_sr = f.samplerate
+        vocal_audio = f.read(f.frames)
+
+    # 构建人声效果链
+    vocal_effects = []
+
+    # 高通滤波：去掉低频噪音（<80Hz）
+    vocal_effects.append(HighpassFilter(cutoff_frequency_hz=80))
+
+    # 压缩器：让人声更稳定，动态更一致（模拟 KTV 硬件压缩）
+    vocal_effects.append(Compressor(
+        threshold_db=-20,
+        ratio=3.0,
+        attack_ms=10,
+        release_ms=100,
+    ))
+
+    # 音量调整
+    if vocal_volume != 1.0:
+        gain_db = 20 * np.log10(max(vocal_volume, 0.01))
+        vocal_effects.append(Gain(gain_db=gain_db))
+
+    # 混响（真正的卷积混响，模拟 AU 的"沉闷的卡拉OK酒吧"效果）
     if reverb > 0:
-        # 混响 = 多个不同延迟的回声叠加，模拟房间反射
-        # 延迟 80-300ms 模拟中等大小房间，衰减控制回响持续时间
-        d1, d2, d3, d4 = 87, 199, 311, 443  # 质数延迟避免共振
-        strength = min(reverb, 0.8)
-        dec1 = round(0.25 + strength * 0.35, 2)  # 0.25-0.53
-        dec2 = round(0.15 + strength * 0.30, 2)  # 0.15-0.39
-        dec3 = round(0.10 + strength * 0.20, 2)  # 0.10-0.26
-        dec4 = round(0.05 + strength * 0.15, 2)  # 0.05-0.17
-        # in_gain=0.8 保持原声清晰，out_gain 随混响强度增大
-        out_gain = round(0.6 + strength * 0.3, 2)
-        vocal_filters.append(
-            f"aecho=0.8:{out_gain}:{d1}|{d2}|{d3}|{d4}:{dec1}|{dec2}|{dec3}|{dec4}"
-        )
-        # 高频提亮：让声音更通透
-        vocal_filters.append("equalizer=f=4000:t=q:w=1.2:g=3")
-        # 中高频增强：增加声音存在感
-        vocal_filters.append("equalizer=f=2500:t=q:w=1.5:g=1.5")
-        # 低频温暖感
-        vocal_filters.append("equalizer=f=250:t=q:w=1:g=1")
+        # room_size: 0.0=小房间, 1.0=大教堂
+        # damping: 高频衰减，越高越温暖（KTV 偏温暖）
+        # wet_level: 混响量（对应 AU 的"湿声"）
+        # dry_level: 原声量（对应 AU 的"干声"）
+        # width: 立体声宽度
+        room = min(0.2 + reverb * 0.8, 0.95)       # 0.2-0.84
+        damp = min(0.5 + reverb * 0.3, 0.85)       # 0.5-0.74
+        wet = min(0.15 + reverb * 0.55, 0.55)      # 0.15-0.59
+        dry = max(0.7 - reverb * 0.3, 0.45)        # 0.7-0.46
 
-    vocal_chain = ",".join(vocal_filters)
+        vocal_effects.append(Reverb(
+            room_size=room,
+            damping=damp,
+            wet_level=wet,
+            dry_level=dry,
+            width=0.8,
+        ))
 
+    # 应用效果链到人声
+    vocal_board = Pedalboard(vocal_effects)
+    processed_vocal = vocal_board(vocal_audio, vocal_sr)
+
+    # 保存处理后的人声
+    processed_vocal_path = vocals_path.replace('.wav', '_fx.wav')
+    with AudioFile(processed_vocal_path, 'w', vocal_sr, processed_vocal.shape[0]) as f:
+        f.write(processed_vocal)
+
+    print(f"[Mix] Vocal effects applied: {len(vocal_effects)} effects")
+
+    # ── Step 2: 处理伴奏（模拟 AU 的"夜总会楼下" EQ）────────
+    # 读取伴奏
+    with AudioFile(instrumental_path) as f:
+        inst_sr = f.samplerate
+        inst_audio = f.read(f.frames)
+
+    inst_effects = []
+
+    # 伴奏音量
+    if instrumental_volume != 1.0:
+        gain_db = 20 * np.log10(max(instrumental_volume, 0.01))
+        inst_effects.append(Gain(gain_db=gain_db))
+
+    # 给伴奏也加一点轻微混响（模拟同一空间）
+    if reverb > 0.2:
+        inst_effects.append(Reverb(
+            room_size=min(0.15 + reverb * 0.4, 0.5),
+            damping=0.7,
+            wet_level=min(reverb * 0.2, 0.15),   # 伴奏混响很轻
+            dry_level=0.85,
+            width=1.0,
+        ))
+
+    if inst_effects:
+        inst_board = Pedalboard(inst_effects)
+        processed_inst = inst_board(inst_audio, inst_sr)
+    else:
+        processed_inst = inst_audio
+
+    processed_inst_path = instrumental_path.replace('.wav', '_fx.wav')
+    with AudioFile(processed_inst_path, 'w', inst_sr, processed_inst.shape[0]) as f:
+        f.write(processed_inst)
+
+    print(f"[Mix] Instrumental effects applied: {len(inst_effects)} effects")
+
+    # ── Step 3: 混合人声+伴奏（ffmpeg）────────────────────────
     cmd = [
         "ffmpeg", "-y",
-        "-i", vocals_path,
-        "-i", instrumental_path,
+        "-i", processed_vocal_path,
+        "-i", processed_inst_path,
         "-filter_complex",
-        f"[0:a]{vocal_chain}[v];[1:a]volume={instrumental_volume}[i];[v][i]amix=inputs=2:duration=longest",
+        "[0:a][1:a]amix=inputs=2:duration=longest",
         "-ac", "2", "-ar", "44100",
         output_path,
     ]

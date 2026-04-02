@@ -32,7 +32,8 @@ RUN pip install --no-cache-dir \
     hydra-core==1.3.2 \
     pyyaml \
     accelerate \
-    demucs
+    demucs \
+    pedalboard
 
 # ── Pre-download model weights (free during build, not at runtime) ──
 # NOTE: HuggingFace username is "Plachta" (single a), not "Plachtaa"
