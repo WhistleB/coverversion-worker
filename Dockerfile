@@ -19,7 +19,7 @@ RUN pip install --no-cache-dir \
     requests \
     scipy \
     librosa \
-    "huggingface-hub>=0.28.1" \
+    "huggingface-hub==0.28.1" \
     munch \
     einops \
     descript-audio-codec \
