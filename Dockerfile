@@ -29,9 +29,6 @@ RUN pip install --no-cache-dir \
     demucs \
     pedalboard
 
-# Upgrade torch to 2.6 for RTX 5090 support (CUDA 12.4 compatible)
-RUN pip install --no-cache-dir torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
-
 # ── Pre-generate matplotlib font cache (saves 23s at runtime) ────
 RUN pip install --no-cache-dir matplotlib && python -c "import matplotlib; print('Font cache generated')"
 
