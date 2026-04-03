@@ -30,7 +30,7 @@ RUN pip install --no-cache-dir \
     pedalboard
 
 # ── Pre-generate matplotlib font cache (saves 23s at runtime) ────
-RUN python -c "import matplotlib; print('Font cache generated')"
+RUN pip install --no-cache-dir matplotlib && python -c "import matplotlib; print('Font cache generated')"
 
 # ── Pre-download model weights (free during build, not at runtime) ──
 RUN python -c "\
