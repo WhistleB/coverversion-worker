@@ -45,7 +45,7 @@ RUN python -c "\
 from transformers import WhisperModel, WhisperFeatureExtractor; \
 WhisperModel.from_pretrained('openai/whisper-small'); \
 WhisperFeatureExtractor.from_pretrained('openai/whisper-small'); \
-print('Whisper cached')"
+print('Whisper cached')" || echo "Whisper download skipped, will download at runtime"
 
 # ── Copy handler ─────────────────────────────────────────────────
 COPY handler.py /app/handler.py
