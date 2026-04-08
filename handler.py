@@ -435,6 +435,8 @@ def handler(job):
     auto_f0_adjust = bool(job_input.get("auto_f0_adjust", False))    # 自动音高适配（歌声转换建议关闭）
     output_format = job_input.get("output_format", "mp3_320")       # wav / mp3_320 / mp3_192
     cover_image = job_input.get("cover_image", "")                  # 封面图名称（如 img_cover_default_01）
+    artist_name = job_input.get("artist_name", "")                  # 歌手名（嵌入 MP3 metadata）
+    song_title = job_input.get("song_title", "")                    # 歌曲名（嵌入 MP3 metadata）
 
     print(f"\n{'='*60}")
     print(f"[Job] task_id={task_id}, pitch={pitch_shift}, steps={diffusion_steps}")
@@ -527,7 +529,15 @@ def handler(job):
                         cover_path = None
                         print(f"[Cover] 封面下载失败，跳过")
 
-                # 转 MP3 + 嵌入封面
+                # 构建 metadata 参数
+                metadata_args = []
+                if artist_name:
+                    metadata_args += ["-metadata", f"artist={artist_name}"]
+                if song_title:
+                    metadata_args += ["-metadata", f"title={song_title}"]
+                metadata_args += ["-metadata", "album=AI Cover"]
+
+                # 转 MP3 + 嵌入封面 + metadata
                 if cover_path and os.path.exists(cover_path):
                     convert_cmd = [
                         "ffmpeg", "-y",
@@ -538,12 +548,11 @@ def handler(job):
                         "-c:v", "png",
                         "-disposition:v", "attached_pic",
                         "-id3v2_version", "3",
-                        mp3_output,
-                    ]
-                    print(f"[Format] MP3 {bitrate} + cover: {cover_image}")
+                    ] + metadata_args + [mp3_output]
+                    print(f"[Format] MP3 {bitrate} + cover + metadata: artist={artist_name}, title={song_title}")
                 else:
-                    convert_cmd = ["ffmpeg", "-y", "-i", final_output, "-b:a", bitrate, mp3_output]
-                    print(f"[Format] MP3 {bitrate} (no cover)")
+                    convert_cmd = ["ffmpeg", "-y", "-i", final_output, "-b:a", bitrate] + metadata_args + [mp3_output]
+                    print(f"[Format] MP3 {bitrate} + metadata (no cover)")
 
                 subprocess.run(convert_cmd, capture_output=True, timeout=60)
                 if os.path.exists(mp3_output):
