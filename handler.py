@@ -403,7 +403,7 @@ def mix_audio(vocals_path: str, instrumental_path: str, output_path: str,
         "-i", processed_vocal_path,
         "-i", processed_inst_path,
         "-filter_complex",
-        "[0:a][1:a]amix=inputs=2:duration=longest",
+        "[0:a][1:a]amix=inputs=2:duration=longest:weights=1 1:normalize=0",
         "-ac", "2", "-ar", "44100",
         output_path,
     ]
