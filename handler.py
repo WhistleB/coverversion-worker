@@ -289,6 +289,49 @@ def run_seed_vc_direct(source_path: str, target_path: str, output_path: str,
     return output_path
 
 
+def analyze_vocal_f0(vocals_path: str) -> dict:
+    """
+    Analyze F0 (fundamental frequency) of a clean vocal track using librosa.pyin.
+    Returns median/mean F0 and musical note name.
+    """
+    try:
+        import librosa
+        import numpy as np
+        y, sr = librosa.load(vocals_path, sr=16000, mono=True)
+        # pyin: probabilistic YIN, higher quality than plain YIN
+        f0, voiced_flag, voiced_probs = librosa.pyin(
+            y,
+            fmin=librosa.note_to_hz('C2'),   # ~65Hz (男低音下限)
+            fmax=librosa.note_to_hz('C6'),   # ~1047Hz (女高音上限)
+            sr=sr,
+            frame_length=2048,
+        )
+        valid = f0[~np.isnan(f0)]
+        if len(valid) == 0:
+            return {"ok": False, "error": "no voiced frames"}
+
+        f0_median = float(np.median(valid))
+        f0_mean = float(np.mean(valid))
+        # 截尾均值 5%-95%,去极端值
+        lo, hi = np.percentile(valid, [5, 95])
+        trimmed = valid[(valid >= lo) & (valid <= hi)]
+        f0_trimmed_mean = float(np.mean(trimmed)) if len(trimmed) > 0 else f0_mean
+
+        note = librosa.hz_to_note(f0_median)
+        print(f"[F0] median={f0_median:.1f}Hz mean={f0_mean:.1f}Hz trimmed={f0_trimmed_mean:.1f}Hz note={note} valid_frames={len(valid)}")
+        return {
+            "ok": True,
+            "f0_median": round(f0_median, 1),
+            "f0_mean": round(f0_mean, 1),
+            "f0_trimmed_mean": round(f0_trimmed_mean, 1),
+            "note": note,
+            "valid_frames": int(len(valid)),
+        }
+    except Exception as e:
+        print(f"[F0] Analysis failed: {e}")
+        return {"ok": False, "error": str(e)}
+
+
 def mix_audio(vocals_path: str, instrumental_path: str, output_path: str,
               vocal_volume: float = 1.0, instrumental_volume: float = 1.0,
               reverb: float = 0.0):
@@ -478,6 +521,10 @@ def handler(job):
             separation_time = time.time() - t
             print(f"[Job] Separation: {separation_time:.1f}s")
 
+            # ── Stage 2.5: Analyze original vocal F0 ─────────────
+            print("[Job] Analyzing original vocal F0...")
+            song_vocal_f0 = analyze_vocal_f0(vocals_path)
+
             # ── Stage 3: Voice conversion ────────────────────────
             runpod.serverless.progress_update(job, {
                 "task_id": task_id, "stage": "converting", "progress": 0.3
@@ -595,6 +642,7 @@ def handler(job):
                 "output_format": output_format,
                 "sample_rate": output_info.sample_rate,
                 "size_mb": round(output_size_mb, 2),
+                "song_vocal_f0": song_vocal_f0,
             }
 
         except Exception as e:
