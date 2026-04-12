@@ -503,6 +503,7 @@ def handler(job):
     song_url = job_input["song_url"]
     voice_url = job_input["voice_url"]
     pitch_shift = int(job_input.get("pitch_shift", 0))
+    user_f0 = float(job_input.get("user_f0", 0))  # 用户声音 F0 (Hz)，> 0 时自动算 pitch_shift
     diffusion_steps = int(job_input.get("diffusion_steps", 25))
     cfg_rate = float(job_input.get("cfg_rate", 0.7))           # 音色还原度
     vocal_volume = float(job_input.get("vocal_volume", 1.1))    # 人声音量（默认略突出）
@@ -560,6 +561,23 @@ def handler(job):
             song_vocal_f0 = analyze_vocal_f0(vocals_path)
             f0_analysis_time = time.time() - t
             print(f"[Job] F0 Analysis: {f0_analysis_time:.1f}s")
+
+            # ── Stage 2.6: Auto pitch_shift (if user_f0 provided) ──
+            import math
+            original_pitch_shift = pitch_shift
+            if user_f0 > 0 and song_vocal_f0.get("ok") and song_vocal_f0["f0_median"] > 0:
+                song_f0 = song_vocal_f0["f0_median"]
+                raw_shift = 12 * math.log2(user_f0 / song_f0)
+                if raw_shift < 0:
+                    # 负值：直接用，最小 -12
+                    pitch_shift = max(-12, round(raw_shift))
+                else:
+                    # 正值：除以 3 再四舍五入，最大 +12
+                    pitch_shift = min(12, round(raw_shift / 3))
+                print(f"[Job] Auto pitch_shift: user_f0={user_f0:.1f}Hz, song_f0={song_f0:.1f}Hz, "
+                      f"raw={raw_shift:.2f}, applied={pitch_shift} (original={original_pitch_shift})")
+            else:
+                print(f"[Job] Manual pitch_shift: {pitch_shift} (user_f0={'%.1f' % user_f0 if user_f0 > 0 else 'not provided'})")
 
             # ── Stage 3: Voice conversion ────────────────────────
             runpod.serverless.progress_update(job, {
@@ -686,6 +704,8 @@ def handler(job):
                 "sample_rate": output_info.sample_rate,
                 "size_mb": round(output_size_mb, 2),
                 "song_vocal_f0": song_vocal_f0,
+                "applied_pitch_shift": pitch_shift,
+                "original_pitch_shift": original_pitch_shift,
             }
 
         except Exception as e:
