@@ -357,7 +357,7 @@ def mix_audio(vocals_path: str, instrumental_path: str, output_path: str,
 
     # Fade-in/out：消除起始"噗"声和结尾"咔嗒"声
     # Seed-VC diffusion 模型的第一帧经常有瞬态杂波，fade-in 可以彻底消除
-    fade_samples = int(vocal_sr * 0.05)  # 50ms
+    fade_samples = int(vocal_sr * 0.5)  # 500ms
     if vocal_audio.shape[-1] > fade_samples * 2:
         fade_in = np.linspace(0, 1, fade_samples)
         fade_out = np.linspace(1, 0, fade_samples)
