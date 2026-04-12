@@ -202,7 +202,7 @@ def separate_vocals(song_path: str, output_dir: str):
     print(f"[Demucs] Separating vocals...")
     cmd = [
         "python", "-m", "demucs",
-        "-n", "htdemucs",
+        "-n", "htdemucs_ft",
         "--two-stems", "vocals",
         "-o", output_dir,
         song_path,
@@ -212,7 +212,7 @@ def separate_vocals(song_path: str, output_dir: str):
         raise RuntimeError(f"Demucs failed: {result.stderr[-300:]}")
 
     song_name = os.path.splitext(os.path.basename(song_path))[0]
-    separated_dir = os.path.join(output_dir, "htdemucs", song_name)
+    separated_dir = os.path.join(output_dir, "htdemucs_ft", song_name)
     vocals_path = os.path.join(separated_dir, "vocals.wav")
     instrumental_path = os.path.join(separated_dir, "no_vocals.wav")
 
