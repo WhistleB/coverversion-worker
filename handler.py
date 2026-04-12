@@ -202,7 +202,7 @@ def separate_vocals(song_path: str, output_dir: str):
     print(f"[Demucs] Separating vocals...")
     cmd = [
         "python", "-m", "demucs",
-        "-n", "htdemucs_ft",
+        "-n", "htdemucs",
         "--two-stems", "vocals",
         "-o", output_dir,
         song_path,
@@ -212,7 +212,7 @@ def separate_vocals(song_path: str, output_dir: str):
         raise RuntimeError(f"Demucs failed: {result.stderr[-300:]}")
 
     song_name = os.path.splitext(os.path.basename(song_path))[0]
-    separated_dir = os.path.join(output_dir, "htdemucs_ft", song_name)
+    separated_dir = os.path.join(output_dir, "htdemucs", song_name)
     vocals_path = os.path.join(separated_dir, "vocals.wav")
     instrumental_path = os.path.join(separated_dir, "no_vocals.wav")
 
@@ -297,7 +297,31 @@ def analyze_vocal_f0(vocals_path: str) -> dict:
     try:
         import librosa
         import numpy as np
+        # Load full audio to find the loudest 30s segment
         y, sr = librosa.load(vocals_path, sr=16000, mono=True)
+        duration = len(y) / sr
+
+        # Only analyze the loudest 30s — that's where vocals are densest (usually chorus)
+        analyze_len = 30
+        if duration > analyze_len:
+            frame_len = sr  # 1 second per frame
+            rms_per_sec = []
+            for i in range(0, len(y) - frame_len, frame_len):
+                rms_per_sec.append(float(np.sqrt(np.mean(y[i:i+frame_len] ** 2))))
+            # Sliding window to find best 30s
+            window = analyze_len
+            best_start = 0
+            best_energy = 0
+            for i in range(len(rms_per_sec) - window + 1):
+                energy = sum(rms_per_sec[i:i+window])
+                if energy > best_energy:
+                    best_energy = energy
+                    best_start = i
+            y = y[best_start * sr : (best_start + window) * sr]
+            print(f"[F0] Using loudest 30s segment starting at {best_start}s (total {duration:.0f}s)")
+        else:
+            print(f"[F0] Audio is {duration:.1f}s, analyzing full track")
+
         # pyin: probabilistic YIN, higher quality than plain YIN
         f0, voiced_flag, voiced_probs = librosa.pyin(
             y,
