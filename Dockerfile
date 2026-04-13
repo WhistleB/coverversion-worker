@@ -46,12 +46,12 @@ WhisperModel.from_pretrained('openai/whisper-small'); \
 WhisperFeatureExtractor.from_pretrained('openai/whisper-small'); \
 print('Whisper cached')" || echo "Whisper download skipped, will download at runtime"
 
-# ── Pre-download Demucs htdemucs_ft model (~320MB, free, MIT license) ──
+# ── Pre-download Demucs htdemucs model (~80MB) ──
 RUN python -c "\
 import torch; \
 from demucs.pretrained import get_model; \
-get_model('htdemucs_ft'); \
-print('htdemucs_ft model downloaded')"
+get_model('htdemucs'); \
+print('htdemucs model downloaded')"
 
 # ── Copy handler ─────────────────────────────────────────────────
 COPY handler.py /app/handler.py
