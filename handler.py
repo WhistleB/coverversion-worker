@@ -243,6 +243,9 @@ import yaml
 with open('/app/msst/bs_roformer_vocals.yaml', 'r') as f:
     config = ConfigDict(yaml.safe_load(f))
 
+config.inference.num_overlap = 4
+config.inference.batch_size = 1
+
 # Run separation
 predict_with_model(
     config=config,
@@ -753,6 +756,8 @@ def handler(job):
             # ── Stage 2.1: Karaoke separation (optional) ────────
             backing_vocals_path = None
             karaoke_time = 0
+            lead_debug_url = ""
+            backing_debug_url = ""
             if karaoke_enabled:
                 t = time.time()
                 karaoke_out_dir = os.path.join(tmpdir, "karaoke_out")
@@ -761,6 +766,19 @@ def handler(job):
                 backing_vocals_path = backing_path
                 karaoke_time = time.time() - t
                 print(f"[Job] Karaoke: {karaoke_time:.1f}s")
+
+                # 上传主唱和和声供前端试听
+                try:
+                    lead_debug_url = upload_file(lead_path, f"lead_{task_id}.wav")
+                    print(f"[Job] Lead vocals uploaded: {lead_debug_url}")
+                except Exception as e:
+                    print(f"[Job] Lead upload failed (non-critical): {e}")
+                if backing_path and os.path.exists(backing_path):
+                    try:
+                        backing_debug_url = upload_file(backing_path, f"backing_{task_id}.wav")
+                        print(f"[Job] Backing vocals uploaded: {backing_debug_url}")
+                    except Exception as e:
+                        print(f"[Job] Backing upload failed (non-critical): {e}")
 
             # ── Stage 2.5: Analyze original vocal F0 ─────────────
             t = time.time()
@@ -958,6 +976,8 @@ def handler(job):
                 "separation_engine": separation_engine,
                 "karaoke_enabled": karaoke_enabled,
                 "karaoke_time": round(karaoke_time, 2) if karaoke_enabled else 0,
+                "lead_vocals_url": lead_debug_url,
+                "backing_vocals_url": backing_debug_url,
                 "vocals_debug_url": vocals_debug_url,
             }
 

@@ -57,15 +57,13 @@ print('htdemucs model downloaded')"
 RUN git clone --depth 1 https://github.com/ZFTurbo/Music-Source-Separation-Training.git /app/msst
 RUN pip install --no-cache-dir ml_collections beartype rotary-embedding-torch
 
-# ── Download BS Roformer vocal model (~400MB, SDR 10.87) ──
-RUN python -c "\
-from huggingface_hub import hf_hub_download; \
-hf_hub_download('KimberleyJSN/melbandroformer', 'MelBandRoformer.ckpt', local_dir='/app/msst'); \
-print('BS Roformer vocals model downloaded')" || \
-python -c "\
-from huggingface_hub import hf_hub_download; \
-hf_hub_download('anvuew/bs_roformer_vocals', 'bs_roformer_vocals.ckpt', local_dir='/app/msst'); \
-print('BS Roformer vocals (fallback) downloaded')"
+# ── Download BS Roformer vocal model (viperx edition, SDR 10.87, ~400MB) ──
+RUN wget -q -O /app/msst/bs_roformer_vocals.ckpt \
+    "https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/model_bs_roformer_ep_317_sdr_12.9755.ckpt" \
+    && wget -q -O /app/msst/bs_roformer_vocals.yaml \
+    "https://raw.githubusercontent.com/ZFTurbo/Music-Source-Separation-Training/main/configs/viperx/model_bs_roformer_ep_317_sdr_12.9755.yaml" \
+    && echo "BS Roformer vocals downloaded (SDR 10.87)" \
+    && ls -lh /app/msst/bs_roformer_vocals.*
 
 # ── Download BS Roformer Karaoke model (~204MB, lead/backing separation) ──
 RUN python -c "\
