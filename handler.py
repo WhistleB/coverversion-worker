@@ -612,6 +612,14 @@ def handler(job):
             separation_time = time.time() - t
             print(f"[Job] Separation: {separation_time:.1f}s")
 
+            # 上传分离后的纯人声，供前端试听诊断
+            vocals_debug_url = ""
+            try:
+                vocals_debug_url = upload_file(vocals_path, f"vocals_{task_id}.wav")
+                print(f"[Job] Vocals uploaded for debug: {vocals_debug_url}")
+            except Exception as e:
+                print(f"[Job] Vocals debug upload failed (non-critical): {e}")
+
             # ── Stage 2.5: Analyze original vocal F0 ─────────────
             t = time.time()
             song_vocal_f0 = analyze_vocal_f0(vocals_path)
@@ -786,6 +794,7 @@ def handler(job):
                 "applied_pitch_shift": pitch_shift,
                 "original_pitch_shift": original_pitch_shift,
                 "warmup_seconds": warmup_seconds if warmup_samples > 0 else 0,
+                "vocals_debug_url": vocals_debug_url,
             }
 
         except Exception as e:
