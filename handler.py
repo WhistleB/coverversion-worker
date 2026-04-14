@@ -229,43 +229,26 @@ def separate_vocals_bs_roformer(song_path: str, output_dir: str):
     print(f"[BS-Roformer] Separating vocals...")
     os.makedirs(output_dir, exist_ok=True)
 
-    script = f"""
-import sys, os, torch, numpy as np, soundfile as sf
-sys.path.insert(0, '/app/msst')
-os.chdir('/app/msst')
-
-from utils.logger import get_logger
-from inference import predict_with_model
-from ml_collections import ConfigDict
-import yaml
-
-# Load config
-with open('/app/msst/bs_roformer_vocals.yaml', 'r') as f:
-    config = ConfigDict(yaml.safe_load(f))
-
-config.inference.num_overlap = 4
-config.inference.batch_size = 1
-
-# Run separation
-predict_with_model(
-    config=config,
-    model_path='/app/msst/bs_roformer_vocals.ckpt',
-    input_folder='{os.path.dirname(song_path)}',
-    output_folder='{output_dir}',
-    device='cuda',
-    extract_instrumental=True,
-)
-print('BS-Roformer separation done')
-"""
-    script_path = os.path.join(output_dir, "run_bsroformer.py")
-    with open(script_path, "w") as f:
-        f.write(script)
-
-    result = subprocess.run(["python", script_path], capture_output=True, text=True, timeout=600)
+    # Use MSST's CLI inference.py directly (official usage)
+    cmd = [
+        "python", "/app/msst/inference.py",
+        "--model_type", "bs_roformer",
+        "--config_path", "/app/msst/bs_roformer_vocals.yaml",
+        "--start_check_point", "/app/msst/bs_roformer_vocals.ckpt",
+        "--input_folder", os.path.dirname(song_path),
+        "--store_dir", output_dir,
+        "--extract_instrumental",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, cwd="/app/msst")
     if result.stdout:
-        print(f"[BS-Roformer] STDOUT: {result.stdout[-300:]}")
+        print(f"[BS-Roformer] STDOUT: {result.stdout[-500:]}")
+    if result.stderr:
+        # Filter out FutureWarning noise
+        stderr_lines = [l for l in result.stderr.split('\n') if 'FutureWarning' not in l and 'UserWarning' not in l]
+        stderr_clean = '\n'.join(stderr_lines).strip()
+        if stderr_clean:
+            print(f"[BS-Roformer] STDERR: {stderr_clean[-300:]}")
     if result.returncode != 0:
-        print(f"[BS-Roformer] STDERR: {result.stderr[-300:]}")
         raise RuntimeError(f"BS-Roformer failed: {result.stderr[-300:]}")
 
     # Find output files
@@ -296,33 +279,21 @@ def separate_karaoke(vocals_path: str, output_dir: str):
     print(f"[Karaoke] Separating lead/backing vocals...")
     os.makedirs(output_dir, exist_ok=True)
 
-    script = f"""
-import sys, os, torch
-sys.path.insert(0, '/app/msst')
-os.chdir('/app/msst')
+    # Copy vocals to a temp input folder (MSST reads from folder, not single file)
+    karaoke_input = os.path.join(output_dir, "input")
+    os.makedirs(karaoke_input, exist_ok=True)
+    shutil.copy(vocals_path, os.path.join(karaoke_input, os.path.basename(vocals_path)))
 
-from inference import predict_with_model
-from ml_collections import ConfigDict
-import yaml
-
-with open('/app/msst/config_karaoke_frazer_becruily.yaml', 'r') as f:
-    config = ConfigDict(yaml.safe_load(f))
-
-predict_with_model(
-    config=config,
-    model_path='/app/msst/bs_roformer_karaoke_frazer_becruily.ckpt',
-    input_folder='{os.path.dirname(vocals_path)}',
-    output_folder='{output_dir}',
-    device='cuda',
-    extract_instrumental=True,
-)
-print('Karaoke separation done')
-"""
-    script_path = os.path.join(output_dir, "run_karaoke.py")
-    with open(script_path, "w") as f:
-        f.write(script)
-
-    result = subprocess.run(["python", script_path], capture_output=True, text=True, timeout=600)
+    cmd = [
+        "python", "/app/msst/inference.py",
+        "--model_type", "bs_roformer",
+        "--config_path", "/app/msst/config_karaoke_frazer_becruily.yaml",
+        "--start_check_point", "/app/msst/bs_roformer_karaoke_frazer_becruily.ckpt",
+        "--input_folder", karaoke_input,
+        "--store_dir", output_dir,
+        "--extract_instrumental",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, cwd="/app/msst")
     if result.stdout:
         print(f"[Karaoke] STDOUT: {result.stdout[-300:]}")
     if result.returncode != 0:
