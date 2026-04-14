@@ -224,6 +224,127 @@ def separate_vocals(song_path: str, output_dir: str, shifts: int = 0):
     return vocals_path, instrumental_path
 
 
+def separate_vocals_bs_roformer(song_path: str, output_dir: str):
+    """Separate vocals and instrumental using BS Roformer (SDR 10.87, much better than Demucs 7.5)."""
+    print(f"[BS-Roformer] Separating vocals...")
+    os.makedirs(output_dir, exist_ok=True)
+
+    script = f"""
+import sys, os, torch, numpy as np, soundfile as sf
+sys.path.insert(0, '/app/msst')
+os.chdir('/app/msst')
+
+from utils.logger import get_logger
+from inference import predict_with_model
+from ml_collections import ConfigDict
+import yaml
+
+# Load config
+with open('/app/msst/bs_roformer_vocals.yaml', 'r') as f:
+    config = ConfigDict(yaml.safe_load(f))
+
+# Run separation
+predict_with_model(
+    config=config,
+    model_path='/app/msst/bs_roformer_vocals.ckpt',
+    input_folder='{os.path.dirname(song_path)}',
+    output_folder='{output_dir}',
+    device='cuda',
+    extract_instrumental=True,
+)
+print('BS-Roformer separation done')
+"""
+    script_path = os.path.join(output_dir, "run_bsroformer.py")
+    with open(script_path, "w") as f:
+        f.write(script)
+
+    result = subprocess.run(["python", script_path], capture_output=True, text=True, timeout=600)
+    if result.stdout:
+        print(f"[BS-Roformer] STDOUT: {result.stdout[-300:]}")
+    if result.returncode != 0:
+        print(f"[BS-Roformer] STDERR: {result.stderr[-300:]}")
+        raise RuntimeError(f"BS-Roformer failed: {result.stderr[-300:]}")
+
+    # Find output files
+    song_name = os.path.splitext(os.path.basename(song_path))[0]
+    vocals_path = None
+    instrumental_path = None
+    for f in os.listdir(output_dir):
+        if f.endswith('.wav'):
+            lower = f.lower()
+            if 'vocal' in lower and 'instrumental' not in lower:
+                vocals_path = os.path.join(output_dir, f)
+            elif 'instrumental' in lower or 'instrum' in lower:
+                instrumental_path = os.path.join(output_dir, f)
+
+    if not vocals_path:
+        files = os.listdir(output_dir)
+        raise RuntimeError(f"BS-Roformer vocals not found in: {files}")
+    if not instrumental_path:
+        files = os.listdir(output_dir)
+        raise RuntimeError(f"BS-Roformer instrumental not found in: {files}")
+
+    print(f"[BS-Roformer] Done: vocals={os.path.basename(vocals_path)}, inst={os.path.basename(instrumental_path)}")
+    return vocals_path, instrumental_path
+
+
+def separate_karaoke(vocals_path: str, output_dir: str):
+    """Separate lead vocals from backing vocals using BS Roformer Karaoke model."""
+    print(f"[Karaoke] Separating lead/backing vocals...")
+    os.makedirs(output_dir, exist_ok=True)
+
+    script = f"""
+import sys, os, torch
+sys.path.insert(0, '/app/msst')
+os.chdir('/app/msst')
+
+from inference import predict_with_model
+from ml_collections import ConfigDict
+import yaml
+
+with open('/app/msst/config_karaoke_frazer_becruily.yaml', 'r') as f:
+    config = ConfigDict(yaml.safe_load(f))
+
+predict_with_model(
+    config=config,
+    model_path='/app/msst/bs_roformer_karaoke_frazer_becruily.ckpt',
+    input_folder='{os.path.dirname(vocals_path)}',
+    output_folder='{output_dir}',
+    device='cuda',
+    extract_instrumental=True,
+)
+print('Karaoke separation done')
+"""
+    script_path = os.path.join(output_dir, "run_karaoke.py")
+    with open(script_path, "w") as f:
+        f.write(script)
+
+    result = subprocess.run(["python", script_path], capture_output=True, text=True, timeout=600)
+    if result.stdout:
+        print(f"[Karaoke] STDOUT: {result.stdout[-300:]}")
+    if result.returncode != 0:
+        print(f"[Karaoke] STDERR: {result.stderr[-300:]}")
+        raise RuntimeError(f"Karaoke failed: {result.stderr[-300:]}")
+
+    # Find lead and backing vocals
+    lead_path = None
+    backing_path = None
+    for f in os.listdir(output_dir):
+        if f.endswith('.wav'):
+            lower = f.lower()
+            if 'instrumental' in lower or 'backing' in lower or 'back' in lower:
+                backing_path = os.path.join(output_dir, f)
+            elif 'vocal' in lower:
+                lead_path = os.path.join(output_dir, f)
+
+    if not lead_path:
+        files = os.listdir(output_dir)
+        raise RuntimeError(f"Karaoke lead vocals not found in: {files}")
+
+    print(f"[Karaoke] Done: lead={os.path.basename(lead_path)}, backing={os.path.basename(backing_path) if backing_path else 'none'}")
+    return lead_path, backing_path
+
+
 def prepend_warmup_segment(vocals_path: str, warmup_seconds: float, output_path: str) -> int:
     """
     Find the loudest N-second segment in vocals, prepend it to the original vocals.
@@ -573,6 +694,8 @@ def handler(job):
     song_title = job_input.get("song_title", "")                    # 歌曲名（嵌入 MP3 metadata）
     warmup_seconds = float(job_input.get("warmup_seconds", 5))       # 热身秒数（取能量最高 N 秒拼在前面，0=不热身）
     demucs_shifts = int(job_input.get("demucs_shifts", 0))           # Demucs TTA shifts（0=最快，2=更干净，3=最干净）
+    separation_engine = job_input.get("separation_engine", "demucs") # "demucs" 或 "bs_roformer"
+    karaoke_enabled = bool(job_input.get("karaoke_enabled", False))  # 是否分离主唱和和声
 
     print(f"\n{'='*60}")
     print(f"[Job] task_id={task_id}, pitch={pitch_shift}, steps={diffusion_steps}")
@@ -610,9 +733,14 @@ def handler(job):
             })
 
             t = time.time()
-            vocals_path, instrumental_path = separate_vocals(song_path, demucs_output_dir, shifts=demucs_shifts)
+            if separation_engine == "bs_roformer":
+                vocals_path, instrumental_path = separate_vocals_bs_roformer(
+                    song_path, os.path.join(tmpdir, "bsroformer_out"))
+            else:
+                vocals_path, instrumental_path = separate_vocals(
+                    song_path, demucs_output_dir, shifts=demucs_shifts)
             separation_time = time.time() - t
-            print(f"[Job] Separation: {separation_time:.1f}s")
+            print(f"[Job] Separation ({separation_engine}): {separation_time:.1f}s")
 
             # 上传分离后的纯人声，供前端试听诊断
             vocals_debug_url = ""
@@ -621,6 +749,18 @@ def handler(job):
                 print(f"[Job] Vocals uploaded for debug: {vocals_debug_url}")
             except Exception as e:
                 print(f"[Job] Vocals debug upload failed (non-critical): {e}")
+
+            # ── Stage 2.1: Karaoke separation (optional) ────────
+            backing_vocals_path = None
+            karaoke_time = 0
+            if karaoke_enabled:
+                t = time.time()
+                karaoke_out_dir = os.path.join(tmpdir, "karaoke_out")
+                lead_path, backing_path = separate_karaoke(vocals_path, karaoke_out_dir)
+                vocals_path = lead_path  # 只转换主唱
+                backing_vocals_path = backing_path
+                karaoke_time = time.time() - t
+                print(f"[Job] Karaoke: {karaoke_time:.1f}s")
 
             # ── Stage 2.5: Analyze original vocal F0 ─────────────
             t = time.time()
@@ -692,6 +832,23 @@ def handler(job):
             })
 
             t = time.time()
+            # If karaoke enabled, first mix backing vocals into instrumental
+            if karaoke_enabled and backing_vocals_path and os.path.exists(backing_vocals_path):
+                inst_with_backing = os.path.join(tmpdir, "inst_with_backing.wav")
+                mix_cmd = [
+                    "ffmpeg", "-y",
+                    "-i", instrumental_path,
+                    "-i", backing_vocals_path,
+                    "-filter_complex",
+                    "[0:a][1:a]amix=inputs=2:duration=longest:weights=1 1:normalize=0",
+                    "-ac", "2", "-ar", "44100",
+                    inst_with_backing,
+                ]
+                subprocess.run(mix_cmd, capture_output=True, timeout=120)
+                if os.path.exists(inst_with_backing):
+                    instrumental_path = inst_with_backing
+                    print(f"[Mix] Backing vocals merged into instrumental")
+
             final_output = os.path.join(tmpdir, "final_cover.wav")
             mix_audio(converted_vocals, instrumental_path, final_output,
                       vocal_volume=vocal_volume,
@@ -767,7 +924,9 @@ def handler(job):
 
             print(f"\n[Job] === SUMMARY ===")
             print(f"[Job] Download:   {download_time:.1f}s")
-            print(f"[Job] Separation: {separation_time:.1f}s")
+            print(f"[Job] Separation: {separation_time:.1f}s ({separation_engine})")
+            if karaoke_enabled:
+                print(f"[Job] Karaoke:    {karaoke_time:.1f}s")
             print(f"[Job] F0 Analyze: {f0_analysis_time:.1f}s")
             print(f"[Job] Conversion: {conversion_time:.1f}s")
             print(f"[Job] Mix:        {mix_time:.1f}s")
@@ -796,6 +955,9 @@ def handler(job):
                 "applied_pitch_shift": pitch_shift,
                 "original_pitch_shift": original_pitch_shift,
                 "warmup_seconds": warmup_seconds if warmup_samples > 0 else 0,
+                "separation_engine": separation_engine,
+                "karaoke_enabled": karaoke_enabled,
+                "karaoke_time": round(karaoke_time, 2) if karaoke_enabled else 0,
                 "vocals_debug_url": vocals_debug_url,
             }
 

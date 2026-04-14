@@ -53,6 +53,27 @@ from demucs.pretrained import get_model; \
 get_model('htdemucs'); \
 print('htdemucs model downloaded')"
 
+# ── Clone Music-Source-Separation-Training (for BS Roformer inference) ──
+RUN git clone --depth 1 https://github.com/ZFTurbo/Music-Source-Separation-Training.git /app/msst
+RUN pip install --no-cache-dir ml_collections beartype rotary-embedding-torch
+
+# ── Download BS Roformer vocal model (~400MB, SDR 10.87) ──
+RUN python -c "\
+from huggingface_hub import hf_hub_download; \
+hf_hub_download('KimberleyJSN/melbandroformer', 'MelBandRoformer.ckpt', local_dir='/app/msst'); \
+print('BS Roformer vocals model downloaded')" || \
+python -c "\
+from huggingface_hub import hf_hub_download; \
+hf_hub_download('anvuew/bs_roformer_vocals', 'bs_roformer_vocals.ckpt', local_dir='/app/msst'); \
+print('BS Roformer vocals (fallback) downloaded')"
+
+# ── Download BS Roformer Karaoke model (~204MB, lead/backing separation) ──
+RUN python -c "\
+from huggingface_hub import hf_hub_download; \
+hf_hub_download('becruily/bs-roformer-karaoke', 'bs_roformer_karaoke_frazer_becruily.ckpt', local_dir='/app/msst'); \
+hf_hub_download('becruily/bs-roformer-karaoke', 'config_karaoke_frazer_becruily.yaml', local_dir='/app/msst'); \
+print('Karaoke model downloaded')"
+
 # ── Copy handler ─────────────────────────────────────────────────
 COPY handler.py /app/handler.py
 
