@@ -313,20 +313,26 @@ def separate_karaoke(vocals_path: str, output_dir: str):
         print(f"[Karaoke] STDERR: {result.stderr[-300:]}")
         raise RuntimeError(f"Karaoke failed: {result.stderr[-300:]}")
 
-    # Find lead and backing vocals
+    # Find lead and backing vocals (MSST creates subdirectories)
     lead_path = None
     backing_path = None
-    for f in os.listdir(output_dir):
-        if f.endswith('.wav'):
+    all_files = []
+    for root, dirs, files in os.walk(output_dir):
+        for f in files:
+            if not f.endswith('.wav'):
+                continue
+            full = os.path.join(root, f)
+            rel = os.path.relpath(full, output_dir)
+            all_files.append(rel)
             lower = f.lower()
-            if 'instrumental' in lower or 'backing' in lower or 'back' in lower:
-                backing_path = os.path.join(output_dir, f)
+            if 'instrumental' in lower or 'other' in lower:
+                backing_path = full
             elif 'vocal' in lower:
-                lead_path = os.path.join(output_dir, f)
+                lead_path = full
+    print(f"[Karaoke] Output files: {all_files}")
 
     if not lead_path:
-        files = os.listdir(output_dir)
-        raise RuntimeError(f"Karaoke lead vocals not found in: {files}")
+        raise RuntimeError(f"Karaoke lead vocals not found in: {all_files}")
 
     print(f"[Karaoke] Done: lead={os.path.basename(lead_path)}, backing={os.path.basename(backing_path) if backing_path else 'none'}")
     return lead_path, backing_path
