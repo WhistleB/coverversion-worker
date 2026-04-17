@@ -554,18 +554,18 @@ def handler(job):
     voice_url = job_input["voice_url"]
     pitch_shift = int(job_input.get("pitch_shift", 0))
     user_f0 = float(job_input.get("user_f0", 0))  # 用户声音 F0 (Hz)，> 0 时自动算 pitch_shift
-    diffusion_steps = int(job_input.get("diffusion_steps", 25))
+    diffusion_steps = int(job_input.get("diffusion_steps", 30))
     cfg_rate = float(job_input.get("cfg_rate", 0.7))           # 音色还原度
-    vocal_volume = float(job_input.get("vocal_volume", 1.1))    # 人声音量（默认略突出）
-    instrumental_volume = float(job_input.get("instrumental_volume", 0.9))  # 伴奏音量
-    reverb = float(job_input.get("reverb", 0.25))              # 混响（默认轻微KTV感）
+    vocal_volume = float(job_input.get("vocal_volume", 3.0))    # 人声音量（默认300%）
+    instrumental_volume = float(job_input.get("instrumental_volume", 1.0))  # 伴奏音量（默认100%）
+    reverb = float(job_input.get("reverb", 0.5))              # 混响（默认中等KTV感）
     auto_f0_adjust = bool(job_input.get("auto_f0_adjust", False))    # 自动音高适配（歌声转换建议关闭）
     output_format = job_input.get("output_format", "mp3_320")       # wav / mp3_320 / mp3_192
     cover_image = job_input.get("cover_image", "")                  # 封面图名称（如 img_cover_default_01）
     artist_name = job_input.get("artist_name", "")                  # 歌手名（嵌入 MP3 metadata）
     song_title = job_input.get("song_title", "")                    # 歌曲名（嵌入 MP3 metadata）
     demucs_shifts = int(job_input.get("demucs_shifts", 0))           # Demucs TTA shifts（0=最快，2=更干净，3=最干净）
-    karaoke_enabled = bool(job_input.get("karaoke_enabled", False))  # 是否分离主唱和和声
+    karaoke_enabled = bool(job_input.get("karaoke_enabled", True))   # 是否分离主唱和和声（默认开）
 
     # 固定使用 fine_tuned_v2（最佳）
     model_version = "fine_tuned_v2"
