@@ -287,10 +287,10 @@ def run_seed_vc_direct(source_path: str, target_path: str, output_path: str,
                        auto_f0_adjust: bool = False):
     """
     Run Seed-VC inference via subprocess.
-    model_version: "standard" / "fine_tuned" / "fine_tuned_v2"
+    model_version: 仅支持 "fine_tuned_v2"
     """
     # Resolve checkpoint path
-    ckpt_name = MODEL_VERSIONS.get(model_version, MODEL_VERSIONS["standard"])
+    ckpt_name = MODEL_VERSIONS.get(model_version, MODEL_VERSIONS["fine_tuned_v2"])
     ckpt_path = os.path.join(SEED_VC_DIR, "checkpoints", "Seed-VC", ckpt_name)
     config_path = os.path.join(SEED_VC_DIR, "configs", "presets", "config_dit_mel_seed_uvit_whisper_base_f0_44k.yml")
     print(f"[Inference] Model: {model_version} → {ckpt_name}")
