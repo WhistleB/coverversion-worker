@@ -612,22 +612,9 @@ def handler(job):
             separation_time = time.time() - t
             print(f"[Job] Separation ({separation_engine}): {separation_time:.1f}s")
 
-            # 上传分离后的纯人声，供前端试听诊断
-            vocals_debug_url = ""
-            t = time.time()
-            try:
-                vocals_debug_url = upload_file(vocals_path, f"vocals_{task_id}.wav")
-                print(f"[Job] Vocals uploaded for debug: {vocals_debug_url}")
-            except Exception as e:
-                print(f"[Job] Vocals debug upload failed (non-critical): {e}")
-            vocals_upload_time = time.time() - t
-
             # ── Stage 2.1: Karaoke separation (optional) ────────
             backing_vocals_path = None
             karaoke_time = 0
-            karaoke_upload_time = 0
-            lead_debug_url = ""
-            backing_debug_url = ""
             if karaoke_enabled:
                 t = time.time()
                 karaoke_out_dir = os.path.join(tmpdir, "karaoke_out")
@@ -636,19 +623,6 @@ def handler(job):
                 backing_vocals_path = backing_path
                 karaoke_time = time.time() - t
                 print(f"[Job] Karaoke: {karaoke_time:.1f}s")
-
-                # 上传主唱和和声供前端试听
-                t_up = time.time()
-                try:
-                    lead_debug_url = upload_file(lead_path, f"lead_{task_id}.wav")
-                except Exception as e:
-                    print(f"[Job] Lead upload failed (non-critical): {e}")
-                if backing_path and os.path.exists(backing_path):
-                    try:
-                        backing_debug_url = upload_file(backing_path, f"backing_{task_id}.wav")
-                    except Exception as e:
-                        print(f"[Job] Backing upload failed (non-critical): {e}")
-                karaoke_upload_time = time.time() - t_up
 
             # ── Stage 2.5: Analyze original vocal F0 ─────────────
             t = time.time()
@@ -790,15 +764,13 @@ def handler(job):
             print(f"\n[Job] === SUMMARY ===")
             print(f"[Job] 1.Download:       {download_time:.1f}s")
             print(f"[Job] 2.Separation:     {separation_time:.1f}s ({separation_engine})")
-            print(f"[Job] 3.Vocals Upload:  {vocals_upload_time:.1f}s (debug)")
             if karaoke_enabled:
-                print(f"[Job] 4.Karaoke:        {karaoke_time:.1f}s (lead/backing split)")
-                print(f"[Job] 5.Karaoke Upload: {karaoke_upload_time:.1f}s (debug)")
-            print(f"[Job] 6.F0 Analyze:     {f0_analysis_time:.1f}s")
-            print(f"[Job] 7.Conversion:     {conversion_time:.1f}s (Seed-VC)")
-            print(f"[Job] 8.Mix:            {mix_time:.1f}s")
-            print(f"[Job] 9.Format:         {format_time:.1f}s")
-            print(f"[Job] 10.Upload:        {upload_time:.1f}s (final)")
+                print(f"[Job] 3.Karaoke:        {karaoke_time:.1f}s (lead/backing split)")
+            print(f"[Job] 4.F0 Analyze:     {f0_analysis_time:.1f}s")
+            print(f"[Job] 5.Conversion:     {conversion_time:.1f}s (Seed-VC)")
+            print(f"[Job] 6.Mix:            {mix_time:.1f}s")
+            print(f"[Job] 7.Format:         {format_time:.1f}s")
+            print(f"[Job] 8.Upload:         {upload_time:.1f}s (final)")
             print(f"[Job] ──────────────────")
             print(f"[Job] TOTAL:            {total_time:.1f}s")
             print(f"[Job] Output:     {output_duration:.1f}s, {output_size_mb:.1f} MB")
@@ -825,9 +797,6 @@ def handler(job):
                 "separation_engine": separation_engine,
                 "karaoke_enabled": karaoke_enabled,
                 "karaoke_time": round(karaoke_time, 2) if karaoke_enabled else 0,
-                "lead_vocals_url": lead_debug_url,
-                "backing_vocals_url": backing_debug_url,
-                "vocals_debug_url": vocals_debug_url,
             }
 
         except Exception as e:
