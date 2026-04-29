@@ -67,17 +67,13 @@ from modules.bigvgan import bigvgan; \
 bigvgan.BigVGAN.from_pretrained('nvidia/bigvgan_v2_44khz_128band_512x', use_cuda_kernel=False); \
 print('BigVGAN cached')"
 
-# ── Pre-download RMVPE（F0 提取，inference.py 强依赖） ──
+# ── Pre-download RMVPE + CAMPPlus（hf_utils.py 硬编码 cache_dir="./checkpoints"，
+# 绕过 HF_HUB_CACHE，必须显式下到 /app/seed-vc/checkpoints/）──
 RUN python -c "\
 from huggingface_hub import hf_hub_download; \
-hf_hub_download(repo_id='lj1995/VoiceConversionWebUI', filename='rmvpe.pt'); \
-print('RMVPE cached')"
-
-# ── Pre-download CAMPPlus（说话人编码，inference.py 强依赖） ──
-RUN python -c "\
-from huggingface_hub import hf_hub_download; \
-hf_hub_download(repo_id='funasr/campplus', filename='campplus_cn_common.bin'); \
-print('CAMPPlus cached')"
+hf_hub_download(repo_id='lj1995/VoiceConversionWebUI', filename='rmvpe.pt', cache_dir='/app/seed-vc/checkpoints'); \
+hf_hub_download(repo_id='funasr/campplus', filename='campplus_cn_common.bin', cache_dir='/app/seed-vc/checkpoints'); \
+print('RMVPE + CAMPPlus cached at /app/seed-vc/checkpoints')"
 
 # ── Clone Music-Source-Separation-Training (for BS Roformer inference) ──
 RUN git clone --depth 1 https://github.com/ZFTurbo/Music-Source-Separation-Training.git /app/msst
