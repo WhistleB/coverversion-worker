@@ -34,31 +34,50 @@ RUN pip install --no-cache-dir \
 # ── Pre-generate matplotlib font cache (saves 23s at runtime) ────
 RUN pip install --no-cache-dir matplotlib && python -c "import matplotlib; print('Font cache generated')"
 
-# ── Pre-download Seed-VC weights (handler 只用 fine_tuned_v2，但启动需要其他文件) ──
+# ── 关键：把 HF cache 指向 Seed-VC inference.py 期望的位置 ──
+# inference.py 顶部硬编码了 os.environ['HF_HUB_CACHE'] = './checkpoints/hf_cache'
+# cwd = /app/seed-vc → 实际路径 /app/seed-vc/checkpoints/hf_cache
+# 所有 HF 预下载必须落到这里，否则 runtime 找不到要联网重下
+ENV HF_HUB_CACHE=/app/seed-vc/checkpoints/hf_cache
+
+# ── Pre-download Seed-VC DiT 模型 + 配置（用绝对路径，handler 用 --checkpoint 传） ──
 RUN python -c "\
 from huggingface_hub import snapshot_download; \
 snapshot_download('Plachta/Seed-VC', local_dir='/app/seed-vc/checkpoints/Seed-VC'); \
 print('Seed-VC weights downloaded')"
 
+# ── Pre-download Whisper-small（content encoder） ──
 RUN python -c "\
 from transformers import WhisperModel, WhisperFeatureExtractor; \
 WhisperModel.from_pretrained('openai/whisper-small'); \
 WhisperFeatureExtractor.from_pretrained('openai/whisper-small'); \
 print('Whisper cached')"
 
-# ── Pre-download Demucs htdemucs model (~80MB) ──
+# ── Pre-download Demucs htdemucs（用 torch hub cache，不走 HF） ──
 RUN python -c "\
 import torch; \
 from demucs.pretrained import get_model; \
 get_model('htdemucs'); \
 print('htdemucs model downloaded')"
 
-# ── Pre-download BigVGAN vocoder (~120MB, 避免 runtime 联网下载卡死) ──
+# ── Pre-download BigVGAN vocoder（~120MB） ──
 RUN python -c "\
 import sys; sys.path.insert(0, '/app/seed-vc'); \
 from modules.bigvgan import bigvgan; \
 bigvgan.BigVGAN.from_pretrained('nvidia/bigvgan_v2_44khz_128band_512x', use_cuda_kernel=False); \
 print('BigVGAN cached')"
+
+# ── Pre-download RMVPE（F0 提取，inference.py 强依赖） ──
+RUN python -c "\
+from huggingface_hub import hf_hub_download; \
+hf_hub_download(repo_id='lj1995/VoiceConversionWebUI', filename='rmvpe.pt'); \
+print('RMVPE cached')"
+
+# ── Pre-download CAMPPlus（说话人编码，inference.py 强依赖） ──
+RUN python -c "\
+from huggingface_hub import hf_hub_download; \
+hf_hub_download(repo_id='funasr/campplus', filename='campplus_cn_common.bin'); \
+print('CAMPPlus cached')"
 
 # ── Clone Music-Source-Separation-Training (for BS Roformer inference) ──
 RUN git clone --depth 1 https://github.com/ZFTurbo/Music-Source-Separation-Training.git /app/msst
