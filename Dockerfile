@@ -53,6 +53,13 @@ from demucs.pretrained import get_model; \
 get_model('htdemucs'); \
 print('htdemucs model downloaded')"
 
+# ── Pre-download BigVGAN vocoder (~120MB, 避免 runtime 联网下载卡死) ──
+RUN python -c "\
+import sys; sys.path.insert(0, '/app/seed-vc'); \
+from modules.bigvgan import bigvgan; \
+bigvgan.BigVGAN.from_pretrained('nvidia/bigvgan_v2_44khz_128band_512x', use_cuda_kernel=False); \
+print('BigVGAN cached')"
+
 # ── Clone Music-Source-Separation-Training (for BS Roformer inference) ──
 RUN git clone --depth 1 https://github.com/ZFTurbo/Music-Source-Separation-Training.git /app/msst
 # Install MSST inference dependencies (skip GUI/training-only packages)
@@ -81,6 +88,10 @@ RUN wget -q -O /app/msst/bs_roformer_karaoke_frazer_becruily.ckpt \
     "https://huggingface.co/becruily/bs-roformer-karaoke/resolve/main/config_karaoke_frazer_becruily.yaml" \
     && echo "Karaoke model downloaded" \
     && ls -lh /app/msst/bs_roformer_karaoke_frazer_becruily.*
+
+# ── 强制 HF/transformers 离线（所有模型已预下，禁止 runtime 联网检查/下载）──
+ENV HF_HUB_OFFLINE=1
+ENV TRANSFORMERS_OFFLINE=1
 
 # ── Copy handler ─────────────────────────────────────────────────
 COPY handler.py /app/handler.py
