@@ -417,6 +417,39 @@ def handler(job):
         print("[Warmup] Worker is warm and ready.")
         return {"status": "warm", "message": "Worker is ready"}
 
+    # Diagnose mode: 返回 worker 内部状态（环境变量、缓存目录、文件清单）
+    if job_input.get("mode") == "diagnose":
+        info = {
+            "env": {k: v for k, v in os.environ.items()
+                    if any(x in k for x in ["HF_", "TRANSFORMERS", "CUDA", "TORCH"])},
+            "cwd_seedvc_exists": os.path.exists(SEED_VC_DIR),
+            "checkpoints_dir": [],
+            "hf_cache_dir": [],
+            "default_hf_cache": [],
+            "inference_py_head": "",
+        }
+        ckpt_dir = os.path.join(SEED_VC_DIR, "checkpoints")
+        if os.path.exists(ckpt_dir):
+            for root, dirs, files in os.walk(ckpt_dir):
+                for f in files:
+                    full = os.path.join(root, f)
+                    try:
+                        size_mb = round(os.path.getsize(full) / 1024 / 1024, 1)
+                        info["checkpoints_dir"].append(f"{os.path.relpath(full, ckpt_dir)} ({size_mb}MB)")
+                    except Exception:
+                        pass
+        hf_cache = os.path.join(SEED_VC_DIR, "checkpoints", "hf_cache")
+        if os.path.exists(hf_cache):
+            info["hf_cache_dir"] = os.listdir(hf_cache)
+        default_cache = "/root/.cache/huggingface/hub"
+        if os.path.exists(default_cache):
+            info["default_hf_cache"] = os.listdir(default_cache)
+        infer_py = os.path.join(SEED_VC_DIR, "inference.py")
+        if os.path.exists(infer_py):
+            with open(infer_py) as f:
+                info["inference_py_head"] = "".join(f.readlines()[:10])
+        return info
+
     task_id = job_input.get("task_id", "unknown")
     song_url = job_input["song_url"]
     voice_url = job_input["voice_url"]
