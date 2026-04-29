@@ -192,7 +192,10 @@ def run_seed_vc_direct(source_path: str, target_path: str, output_path: str,
                 print(f"[Inference] {line.strip()}")
 
     if result.returncode != 0:
-        raise RuntimeError(f"Seed-VC failed: {result.stderr[-300:]}")
+        # 完整打印 stderr 到日志，方便排查（不截断）
+        print(f"[Inference] FULL STDERR:\n{result.stderr}")
+        print(f"[Inference] FULL STDOUT:\n{result.stdout}")
+        raise RuntimeError(f"Seed-VC failed: {result.stderr[-2000:]}")
 
     # Find output file
     out_dir = os.path.dirname(output_path)
