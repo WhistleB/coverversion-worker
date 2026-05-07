@@ -470,6 +470,7 @@ def handler(job):
     song_title = job_input.get("song_title", "")                    # 歌曲名（嵌入 MP3 metadata）
     demucs_shifts = int(job_input.get("demucs_shifts", 0))           # Demucs TTA shifts（0=最快，2=更干净，3=最干净）
     karaoke_enabled = bool(job_input.get("karaoke_enabled", False))  # 是否分离主唱和和声
+    client_song_f0 = float(job_input.get("song_f0", 0))  # 客户端预先算好的歌曲 F0；> 0 时跳过后端 librosa.pyin 分析
 
     # 固定使用 fine_tuned_v2（最佳）
     model_version = "fine_tuned_v2"
@@ -477,7 +478,7 @@ def handler(job):
     print(f"\n{'='*60}")
     print(f"[Job] task_id={task_id}, pitch={pitch_shift}, steps={diffusion_steps}")
     print(f"[Job] cfg_rate={cfg_rate}, vocal_vol={vocal_volume}, inst_vol={instrumental_volume}, reverb={reverb}")
-    print(f"[Job] auto_f0={auto_f0_adjust}, karaoke={karaoke_enabled}")
+    print(f"[Job] auto_f0={auto_f0_adjust}, karaoke={karaoke_enabled}, client_song_f0={client_song_f0 if client_song_f0 > 0 else 'none'}")
     print(f"{'='*60}")
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -529,10 +530,21 @@ def handler(job):
                 print(f"[Job] Karaoke: {karaoke_time:.1f}s")
 
             # ── Stage 2.5: Analyze original vocal F0 ─────────────
-            t = time.time()
-            song_vocal_f0 = analyze_vocal_f0(vocals_path)
-            f0_analysis_time = time.time() - t
-            print(f"[Job] F0 Analysis: {f0_analysis_time:.1f}s")
+            # 客户端如果传了 song_f0（针对引导页固定歌曲预先算好），跳过 librosa.pyin
+            # 冷启动可省 ~17s（librosa 首次 import）+ pyin 计算时间
+            if client_song_f0 > 0:
+                song_vocal_f0 = {
+                    "ok": True,
+                    "f0_median": client_song_f0,
+                    "source": "client",
+                }
+                f0_analysis_time = 0.0
+                print(f"[Job] F0 from client: {client_song_f0}Hz (skip librosa)")
+            else:
+                t = time.time()
+                song_vocal_f0 = analyze_vocal_f0(vocals_path)
+                f0_analysis_time = time.time() - t
+                print(f"[Job] F0 Analysis: {f0_analysis_time:.1f}s")
 
             # ── Stage 2.6: Auto pitch_shift (if user_f0 provided) ──
             import math
