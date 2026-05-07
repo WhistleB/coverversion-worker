@@ -16,7 +16,9 @@ import time
 import subprocess
 import traceback
 import shutil
+from urllib.parse import urlparse
 
+import oss2
 import requests
 import runpod
 import torchaudio
@@ -37,24 +39,60 @@ def download_file(url: str, dest_path: str):
     print(f"[Download] Done: {size_mb:.1f} MB")
 
 
+def get_required_env(name: str) -> str:
+    """Read a required environment variable."""
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
+def build_oss_public_url(bucket_name: str, endpoint: str, object_key: str) -> str:
+    """Build public URL for an uploaded OSS object."""
+    public_base_url = os.environ.get("ALIYUN_OSS_PUBLIC_BASE_URL", "").strip()
+    if public_base_url:
+        return f"{public_base_url.rstrip('/')}/{object_key}"
+
+    parsed = urlparse(endpoint)
+    if not parsed.scheme or not parsed.netloc:
+        raise RuntimeError(f"Invalid ALIYUN_OSS_ENDPOINT: {endpoint}")
+
+    return f"{parsed.scheme}://{bucket_name}.{parsed.netloc}/{object_key}"
+
+
 def upload_file(file_path: str, filename: str, max_retries: int = 3) -> str:
-    """Upload file to tmpfiles.org with retry, return direct download URL."""
+    """Upload file to Aliyun OSS with retry, return public URL."""
     size_mb = os.path.getsize(file_path) / 1024 / 1024
     print(f"[Upload] Uploading {filename} ({size_mb:.1f} MB)...")
 
+    endpoint = get_required_env("ALIYUN_OSS_ENDPOINT")
+    bucket_name = get_required_env("ALIYUN_OSS_BUCKET")
+    access_key_id = get_required_env("ALIYUN_OSS_ACCESS_KEY_ID")
+    access_key_secret = get_required_env("ALIYUN_OSS_ACCESS_KEY_SECRET")
+    prefix = os.environ.get("ALIYUN_OSS_PREFIX", "covers").strip().strip("/")
+
+    object_key = filename.lstrip("/")
+    if prefix:
+        object_key = f"{prefix}/{object_key}"
+
+    file_ext = os.path.splitext(file_path)[1].lower()
+    if file_ext == ".mp3":
+        content_type = "audio/mpeg"
+    elif file_ext == ".wav":
+        content_type = "audio/wav"
+    else:
+        content_type = "application/octet-stream"
+
+    auth = oss2.Auth(access_key_id, access_key_secret)
+    bucket = oss2.Bucket(auth, endpoint, bucket_name)
+    headers = {"Content-Type": content_type}
+
     for attempt in range(1, max_retries + 1):
         try:
-            with open(file_path, "rb") as f:
-                resp = requests.post(
-                    "https://tmpfiles.org/api/v1/upload",
-                    files={"file": (filename, f, "audio/wav")},
-                    timeout=120,
-                )
-            resp.raise_for_status()
-            data = resp.json()
-            if data.get("status") != "success":
-                raise RuntimeError(f"Response not success: {data}")
-            url = data["data"]["url"].replace("tmpfiles.org/", "tmpfiles.org/dl/")
+            result = bucket.put_object_from_file(object_key, file_path, headers=headers)
+            if result.status != 200:
+                raise RuntimeError(f"OSS upload returned status {result.status}")
+            url = build_oss_public_url(bucket_name, endpoint, object_key)
             print(f"[Upload] Done: {url}")
             return url
         except Exception as e:
@@ -674,7 +712,7 @@ def handler(job):
             })
 
             t = time.time()
-            output_url = upload_file(final_output, f"cover_{task_id}{file_ext}")
+            output_url = upload_file(final_output, f"{task_id}/cover_{task_id}{file_ext}")
             upload_time = time.time() - t
 
             total_time = time.time() - total_start
