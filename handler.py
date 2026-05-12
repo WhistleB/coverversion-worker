@@ -591,17 +591,17 @@ def handler(job):
                 song_f0 = song_vocal_f0["f0_median"]
                 raw_shift = 12 * math.log2(user_f0 / song_f0)
                 if raw_shift < 0:
-                    # 负值（用户声音比歌曲低）：按男女声分别处理，最小 -12
-                    # - 男声 F0 通常 85-180Hz，嗓子能 hold 住较大幅度降调，取 3/4 让歌
-                    #   更贴近男声自然音域，听感顺畅
-                    # - 女声 F0 通常 165-260Hz，降调过猛会丢失女声特征显闷，取 1/2 缓和
+                    # 负值（用户声音比歌曲低）：按男女声分别处理
                     # 175Hz 为分界点（保守偏女，避免把女中音误判为男声而过度降调）
                     if user_f0 < 175:
-                        # 男声：取 3/4
+                        # 男声：F0 通常 85-180Hz，嗓子能 hold 住较大幅度降调，取 3/4
+                        # 让歌更贴近男声自然音域，听感顺畅。最小 -12。
                         pitch_shift = max(-12, round(raw_shift * 3 / 4))
                     else:
-                        # 女声：取 1/2
-                        pitch_shift = max(-12, round(raw_shift / 2))
+                        # 女声：直接不降调（pitch_shift=0），让歌曲保持原调，
+                        # 由 Seed-VC 神经网络处理 F0 转换。
+                        # 测试结论：降调反而引入电音/金属感，不动调最稳。
+                        pitch_shift = 0
                 else:
                     # 正值：除以 3 再四舍五入，最大 +12（升调过猛容易花栗鼠音）
                     pitch_shift = min(12, round(raw_shift / 3))
